@@ -15,7 +15,7 @@ class DataHandler:
         :return: A dictionary containing the processed DataFrame."""
 
         try:
-            conn = sqlite3.connect("stocks.db")
+            conn = sqlite3.connect("sample_stocks.db")
         except sqlite3.Error as e:
             print(f"Failed to connect to database: {e}")
             sys.exit(1)
@@ -76,7 +76,7 @@ class DataHandler:
         info_table = "stock_metadata" # Change this if your metadata table has a different name
         
         try:
-            conn = sqlite3.connect("stocks.db")
+            conn = sqlite3.connect("sample_stocks.db")
             
             # 1. Fetch metadata to identify relevant tickers
             # We use double quotes because "Market Cap" has a space
