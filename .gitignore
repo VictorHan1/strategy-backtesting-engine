@@ -1,0 +1,45 @@
+# -------------------------
+# Python cache
+# -------------------------
+__pycache__/
+*.pyc
+
+# -------------------------
+# Virtual environments
+# -------------------------
+.venv/
+venv/
+
+# -------------------------
+# Jupyter
+# -------------------------
+.ipynb_checkpoints/
+
+# Ignore all notebooks
+*.ipynb
+
+# Allow only the first two notebooks
+!Untitled.ipynb
+!Untitled1.ipynb
+
+# -------------------------
+# Local databases
+# -------------------------
+*.db
+
+# -------------------------
+# Finviz generated CSV / cache
+# -------------------------
+finviz_screener_cache*.csv
+finviz_*.csv
+
+# -------------------------
+# Temporary / test files
+# -------------------------
+test.py
+slideshow.html
+
+# -------------------------
+# MacOS
+# -------------------------
+.DS_Store
