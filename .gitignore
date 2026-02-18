@@ -26,6 +26,7 @@ venv/
 # Local databases
 # -------------------------
 *.db
+!sample_stocks.db
 
 # -------------------------
 # Finviz generated CSV / cache
@@ -37,6 +38,7 @@ finviz_*.csv
 # Temporary / test files
 # -------------------------
 test.py
+create_sample.py
 slideshow.html
 
 # -------------------------

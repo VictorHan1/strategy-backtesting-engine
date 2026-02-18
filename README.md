@@ -2,7 +2,7 @@
 
 A modular Python-based backtesting engine for evaluating systematic trading strategies across multiple equities.
 
-The system combines vectorized indicator computation with Numba-optimized execution logic and parallel processing for scalable simulations.
+The system combines vectorized indicator computation with Numba-optimized execution logic and parallel processing to support scalable simulations.
 
 ---
 
@@ -10,21 +10,22 @@ The system combines vectorized indicator computation with Numba-optimized execut
 
 ### Data Layer (ETL & Storage)
 
-- `dataHandler.py` – Handles runtime interaction with the SQLite database.
-- `download_history.py` – Batch script for downloading historical market data.
+- `dataHandler.py` – Handles runtime interaction with the SQLite database. Configured to load from `sample_stocks.db` by default.
+- `sample_stocks.db` – Lightweight sample database (30 liquid equities) for immediate execution.
+- `download_history.py` – Historical data download pipeline.
 - `clean_database.py` – Data cleaning and deduplication utilities.
 - `databuilder1.py` – Database construction pipeline.
 - `get_finviz_tickers.py` – Stock universe construction.
 - `getipo_date.py` – IPO and historical depth validation utility.
 
-*Note: Database files are excluded from the repository.*
+*Note: Production-scale databases are excluded from the repository.*
 
 ---
 
 ### Strategy Engine
 
 - `strategy.py` – Base strategy abstraction.
-- `rsi_sma_strategy.py` – RSI + SMA implementation using Numba (`@njit`) for efficient state-dependent execution.
+- `rsi_sma_strategy.py` – RSI + SMA implementation using **Numba (@njit)** for efficient state-dependent execution.
 - `indicators.py` – Vectorized technical indicator calculations.
 - `strategyManager.py` – Orchestration layer connecting data to strategy logic.
 
@@ -40,41 +41,39 @@ The system combines vectorized indicator computation with Numba-optimized execut
 
 ## Key Features
 
-- Hybrid execution model (Vectorized indicators + JIT-compiled trade logic)
-- Support for state-dependent strategies (e.g., trailing stops, partial exits)
-- Parallel processing across multiple tickers
-- Modular and extensible architecture
-- SQLite-based local storage
+- Hybrid Execution Model: Vectorized indicators combined with JIT-compiled trade logic.
+- Support for state-dependent strategies: (e.g., trailing stops, partial exits).
+- Parallel execution: Scalable backtesting across multiple tickers using multiprocessing.
+- Modular Architecture: Clear separation between Data, Execution, and Analytics layers.
+- Zero-Configuration: Includes a ready-to-run sample database.
 
 ---
+
 ## Design Philosophy
 
 The system follows a strict **Separation of Concerns**:
 
-- **Data preparation** is decoupled from strategy execution.
-- **Strategy logic** is isolated from performance analytics.
-- **Analytics** operates on trade logs without influencing execution.
-
-This structure allows future extension with additional strategies, optimization layers, or risk models.
+- Data preparation is decoupled from strategy execution.
+- Strategy logic is isolated from performance analytics.
+- Analytics operates on trade logs without influencing execution.
 
 ---
 
 ## Future Improvements
 
-- Parameter optimization (Grid Search / evolutionary approaches)
-- Portfolio-level risk modeling
-- Configuration-driven strategy definitions
-- Optional live execution bridge
-
+- Parameter optimization (Grid Search / evolutionary approaches).
+- Portfolio-level risk modeling and correlation analysis.
+- Optional live execution bridge (IBKR/Alpaca API integration).
 ## Installation & Usage
 
 ### Requirements
 
 - Python 3.10+
-- Local SQLite database (`stocks.db`) built using the provided data scripts
+- Dependencies: `pandas`, `numpy`, `matplotlib`, `numba`, `TA-Lib` (Optional for data fetching: `yfinance`, `finvizfinance`)
 
 ### Run Backtest
 
+The engine is pre-configured to run on the included sample data:
+
 ```bash
 python main.py
-
