@@ -78,7 +78,6 @@ class RsiSmaStrategy(Strategy):
         self.rsi_p = self.params.get("rsi_period", 10)
         self.sma_p = self.params.get("sma_period", 200)
 
-        print("\nPARAMETERS RECEIVED:", self.params, "\n")
         # Column names built from parameters
         self.col_rsi = f"RSI_{self.rsi_p}"
         self.col_sma = f"SMA_{self.sma_p}"

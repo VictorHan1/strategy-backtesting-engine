@@ -51,7 +51,6 @@ def run_backtests_for_sma_period(data_dict, sma_period):
             ticker, stats, trades = future.result()
             results[ticker] = stats
             trades_dict[ticker] = trades
-            print(f"[DONE] {ticker} done")
 
     return results, trades_dict
 
@@ -67,8 +66,7 @@ def main():
 
         results, _ = run_backtests_for_sma_period(data_dict, sma_period)
 
-        print(f"[✅] Backtest completed for SMA {sma_period}")
-        print("Example (DIS):", results.get("DIS"))
+        print(f"Completed {len(results)}/{len(data_dict)} stocks for SMA {sma_period}")
 
         all_results[sma_period] = results
 

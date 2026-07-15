@@ -24,36 +24,58 @@ class Reporter:
         Print a summary of backtest performance metrics.
         """
         print("Backtest Summary:")
-        if len(self.results) == 0:
+        if len(self.all_results) == 0:
             print("No results to summarize.")
             return
 
-        print("\n[⚠️ WARNING] Stocks with invalid stats (None or NaN):")
-        for ticker, stats in self.results.items():
-            if any(
-                stats.get(k) is None or pd.isna(stats.get(k))
-                for k in ['win_rate', 'avg_rr', 'avg_return']
-            ):
-                print(f" - {ticker}: {stats}")
+        stat_columns = ["win_rate", "avg_rr", "avg_return"]
 
-        # סינון רק תוצאות תקינות
-        valid_results = [
-            r for r in self.results.values()
-            if all(r.get(k) is not None and not pd.isna(r.get(k)) for k in ['win_rate', 'avg_rr', 'avg_return'])
-        ]
+        for sma_period, ticker_results in self.all_results.items():
+            title = f"SMA {sma_period} Summary"
+            print(f"\n{title}")
+            print("-" * len(title))
 
-        total_trades = sum(r.get('total_trades', 0) for r in valid_results)
+            invalid_results = []
+            valid_results = []
 
-        win_rate = sum(r['win_rate'] * r['total_trades'] for r in valid_results) / total_trades if total_trades > 0 else 0
-        avg_rr = sum(r['avg_rr'] * r['total_trades'] for r in valid_results) / total_trades if total_trades > 0 else 0
-        avg_return = sum(r['avg_return'] * r['total_trades'] for r in valid_results) / total_trades if total_trades > 0 else 0
+            for ticker, stats in ticker_results.items():
+                has_invalid_stats = any(
+                    stats.get(column) is None or pd.isna(stats.get(column))
+                    for column in stat_columns
+                )
 
+                if has_invalid_stats:
+                    invalid_results.append((ticker, stats))
+                else:
+                    valid_results.append(stats)
 
+            if invalid_results:
+                print("Invalid stats:")
+                for ticker, stats in invalid_results:
+                    print(f" - {ticker}: {stats}")
 
-        print(f"Total Trades: {total_trades}")
-        print(f"Win Rate: {win_rate:.4f}")
-        print(f"Average Risk-Reward Ratio: {avg_rr:.4f}")
-        print(f"Average Return: {avg_return:.4f}")
+            total_trades = sum(r.get("total_trades", 0) for r in valid_results)
+
+            win_rate = (
+                sum(r["win_rate"] * r["total_trades"] for r in valid_results) / total_trades
+                if total_trades > 0
+                else 0
+            )
+            avg_rr = (
+                sum(r["avg_rr"] * r["total_trades"] for r in valid_results) / total_trades
+                if total_trades > 0
+                else 0
+            )
+            avg_return = (
+                sum(r["avg_return"] * r["total_trades"] for r in valid_results) / total_trades
+                if total_trades > 0
+                else 0
+            )
+
+            print(f"Total Trades: {total_trades}")
+            print(f"Win Rate: {win_rate:.1%}")
+            print(f"Average Risk-Reward: {avg_rr:.2f}")
+            print(f"Average Return: {avg_return:.2f}%")
 
     def plot_equity_curve(self):
         """
