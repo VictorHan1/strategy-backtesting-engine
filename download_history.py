@@ -1,18 +1,8 @@
 """
-stock_data_fetcher.py
-=====================
+Download historical OHLCV data for symbols stored in SQLite metadata.
 
-Fetch 10 years of daily OHLCV data for every stock symbol in
-`stock_metadata` (column `symbol`) and store it in
-`historical_stock_data` within stocks.db.
-
-• Adds/updates AdjClose
-• Commits on each symbol
-• 1.5-second polite pause between API calls
-• Logs successes and failures
-
-Author : Your Name
-Date   : 2025-05-26
+The script reads symbols from `stock_metadata`, downloads daily price history
+with yfinance, and stores the result in `historical_stock_data`.
 """
 
 import time
@@ -25,14 +15,12 @@ from typing import List, Optional
 import pandas as pd
 import yfinance as yf
 
-# ── LOGGING ────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
-# ───────────────────────────────────────────────────────────
 
 
 class StockDataFetcher:
@@ -40,11 +28,10 @@ class StockDataFetcher:
 
     def __init__(self, db_path: str = "stocks.db"):
         self.db_path = db_path
-        Path(db_path).touch(exist_ok=True)          # create file if absent
+        Path(db_path).touch(exist_ok=True)
         self.conn = sqlite3.connect(db_path)
         self.create_historical_table()
 
-    # ── DDL ────────────────────────────────────────────────
     def create_historical_table(self) -> None:
         """Create the destination table once."""
         ddl = """
@@ -65,9 +52,8 @@ class StockDataFetcher:
             ON historical_stock_data(symbol, date);
         """
         self.conn.executescript(ddl)
-        logger.info("✅ historical_stock_data table ready")
+        logger.info("historical_stock_data table ready")
 
-    # ── METADATA ───────────────────────────────────────────
     def get_stock_symbols(
         self,
         table_name: str = "stock_metadata",
@@ -76,21 +62,19 @@ class StockDataFetcher:
         """Return distinct symbols from metadata table."""
         cur = self.conn.cursor()
 
-        # verify table
         cur.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
             (table_name,),
         )
         if not cur.fetchone():
-            logger.error(f"❌ table '{table_name}' not found in DB")
+            logger.error(f"table '{table_name}' not found in DB")
             return []
 
-        # verify column
         cur.execute(f"PRAGMA table_info({table_name})")
         columns = [col[1] for col in cur.fetchall()]
         if symbol_column not in columns:
             logger.error(
-                f"❌ column '{symbol_column}' not found – available: {columns}"
+                f"column '{symbol_column}' not found; available columns: {columns}"
             )
             return []
 
@@ -100,10 +84,9 @@ class StockDataFetcher:
             f"WHERE {symbol_column} IS NOT NULL AND {symbol_column}!=''"
         )
         symbols = [row[0] for row in cur.fetchall()]
-        logger.info(f"📦 {len(symbols)} unique symbols found")
+        logger.info(f"{len(symbols)} unique symbols found")
         return symbols
 
-    # ── FETCH ─────────────────────────────────────────────
     def fetch_stock_data(
         self,
         symbol: str,
@@ -120,13 +103,12 @@ class StockDataFetcher:
                 threads=False,
             )
             if data.empty:
-                logger.warning(f"⚠️  empty DataFrame for {symbol}")
+                logger.warning(f"empty DataFrame for {symbol}")
                 return None
 
             data.reset_index(inplace=True)
             data["Symbol"] = symbol
 
-            # standardize column names
             data.columns = [
                 "Date",
                 "Open",
@@ -145,10 +127,9 @@ class StockDataFetcher:
             return data
 
         except Exception as ex:
-            logger.error(f"🚫 fetch error for {symbol}: {ex}")
+            logger.error(f"fetch error for {symbol}: {ex}")
             return None
 
-    # ── PERSIST ───────────────────────────────────────────
     def save_stock_data(self, df: pd.DataFrame) -> None:
         """Upsert DataFrame rows into SQLite."""
         cur = self.conn.cursor()
@@ -172,9 +153,8 @@ class StockDataFetcher:
                 ),
             )
         self.conn.commit()
-        logger.info(f"💾 saved {len(df)} rows for {df['Symbol'].iloc[0]}")
+        logger.info(f"saved {len(df)} rows for {df['Symbol'].iloc[0]}")
 
-    # ── MAIN LOOP ─────────────────────────────────────────
     def fetch_all(
         self,
         start_date: Optional[datetime] = None,
@@ -188,7 +168,7 @@ class StockDataFetcher:
         start_date = start_date or end_date - timedelta(days=365 * 10)
 
         logger.info(
-            f"🔄 fetching from {start_date.date()} to {end_date.date()} "
+            f"fetching from {start_date.date()} to {end_date.date()} "
             f"(delay {delay}s)"
         )
 
@@ -198,7 +178,7 @@ class StockDataFetcher:
 
         success = fail = 0
         for i, sym in enumerate(symbols, 1):
-            logger.info(f"▶️  {sym} ({i}/{len(symbols)})")
+            logger.info(f"{sym} ({i}/{len(symbols)})")
             df = self.fetch_stock_data(sym, start_date, end_date)
             if df is not None and not df.empty:
                 self.save_stock_data(df)
@@ -208,9 +188,8 @@ class StockDataFetcher:
             if i < len(symbols):
                 time.sleep(delay)
 
-        logger.info(f"🏁 done – success: {success} | fail: {fail}")
+        logger.info(f"done - success: {success} | fail: {fail}")
 
-    # ── STATS ─────────────────────────────────────────────
     def get_statistics(self):
         cur = self.conn.cursor()
         cur.execute("SELECT COUNT(DISTINCT symbol) FROM historical_stock_data")
@@ -220,20 +199,18 @@ class StockDataFetcher:
         cur.execute("SELECT MIN(date), MAX(date) FROM historical_stock_data")
         dmin, dmax = cur.fetchone()
         logger.info(
-            f"📊 stats – symbols: {symbols} | rows: {rows} | "
-            f"date range: {dmin} ➜ {dmax}"
+            f"stats - symbols: {symbols} | rows: {rows} | "
+            f"date range: {dmin} -> {dmax}"
         )
 
-    # ── CLEANUP ──────────────────────────────────────────
     def close(self):
         self.conn.close()
 
 
-# ── USAGE EXAMPLE ────────────────────────────────────────
 if __name__ == "__main__":
     fetcher = StockDataFetcher("stocks.db")
     try:
-        fetcher.fetch_all(                # adjust if needed
+        fetcher.fetch_all(
             table_name="stock_metadata",
             symbol_column="symbol",
             delay=1.5,
