@@ -1,364 +1,407 @@
-import pandas as pd
 import os
+
+import pandas as pd
+from finvizfinance.screener.financial import Financial
 from finvizfinance.screener.overview import Overview
+from finvizfinance.screener.ownership import Ownership
 from finvizfinance.screener.technical import Technical
 from finvizfinance.screener.valuation import Valuation
-from finvizfinance.screener.financial import Financial
-from finvizfinance.screener.ownership import Ownership
+
+
+CACHE_FILE = "finviz_screener_cache_enhanced.csv"
+OUTPUT_FILE = "finviz_minervini_tickers.csv"
+
+FINVIZ_FILTERS = {
+    "Market Cap.": "+Mid (over $2bln)",    # cap_midover
+    "IPO Date": "More than 10 years ago",  # ipodate_more10
+    "Average Volume": "Over 300K",         # sh_avgvol_o300
+    "Price": "Over $7",                    # sh_price_o7
+}
+
+SCREENER_CONFIGS = [
+    ("technical", "Technical", Technical),
+    ("overview", "Overview", Overview),
+    ("valuation", "Valuation", Valuation),
+    ("financial", "Financial", Financial),
+    ("ownership", "Ownership", Ownership),
+]
+
+BASIC_COLUMNS = ["Ticker", "Company", "Sector", "Industry"]
+PRICE_COLUMNS = ["Price", "Change", "Market Cap"]
+VOLUME_VARIANTS = [
+    "Avg Volume",
+    "AvgVolume",
+    "Avg. Volume",
+    "Average Volume",
+    "Avg Vol",
+    "Volume",
+]
+EARNINGS_GROWTH_VARIANTS = [
+    "EPS growth this year",
+    "EPS Growth",
+    "EPS growth past 5 years",
+    "EPS Growth (ttm)",
+    "EPS Growth Y/Y",
+    "EPS growth next year",
+    "EPS (ttm)",
+    "EPS growth next 5 years",
+    "EPS Q/Q",
+    "EPS Y/Y",
+]
+SALES_GROWTH_VARIANTS = [
+    "Sales growth past 5 years",
+    "Sales Growth",
+    "Sales Q/Q",
+    "Sales Y/Y",
+    "Revenue Growth",
+    "Sales growth this year",
+    "Sales growth next year",
+]
+PROFITABILITY_VARIANTS = [
+    "ROE",
+    "ROI",
+    "ROA",
+    "Gross Margin",
+    "Oper. Margin",
+    "Profit Margin",
+    "Operating Margin",
+    "Net Margin",
+]
+VALUATION_VARIANTS = [
+    "P/E",
+    "Forward P/E",
+    "PEG",
+    "P/S",
+    "P/B",
+    "P/C",
+    "P/FCF",
+    "EPS (ttm)",
+    "EPS next Y",
+    "EPS next 5Y",
+    "Book/sh",
+]
+OWNERSHIP_VARIANTS = [
+    "Institutional Ownership",
+    "Inst Own",
+    "Institutional Own",
+    "Inst. Own",
+    "Insider Own",
+    "Insider Owner",
+    "Insider Ownership",
+    "Insider Own.",
+]
+TARGET_PRICE_VARIANTS = ["Target Price", "Price Target", "Analyst Target", "Target"]
+TECHNICAL_VARIANTS = [
+    "Beta",
+    "RSI (14)",
+    "RSI",
+    "Perf Week",
+    "Perf Month",
+    "Perf Quarter",
+    "Perf Half Y",
+    "Perf Year",
+    "Perf YTD",
+    "Volatility",
+    "Volatility (Month)",
+    "SMA20",
+    "SMA50",
+    "SMA200",
+    "50-Day Simple Moving Average",
+    "200-Day Simple Moving Average",
+    "Recom",
+    "Rel Volume",
+]
+ADDITIONAL_VARIANTS = [
+    "Debt/Eq",
+    "Current Ratio",
+    "Quick Ratio",
+    "LT Debt/Eq",
+    "Dividend %",
+    "Payout",
+    "Income",
+    "Employees",
+    "Optionable",
+    "Shortable",
+    "Short Ratio",
+    "Short Interest",
+]
+
+COLUMN_GROUPS = [
+    ("Earnings growth metrics", EARNINGS_GROWTH_VARIANTS),
+    ("Sales growth metrics", SALES_GROWTH_VARIANTS),
+    ("Profitability metrics", PROFITABILITY_VARIANTS),
+    ("Valuation metrics", VALUATION_VARIANTS),
+    ("Ownership metrics", OWNERSHIP_VARIANTS),
+]
+
+POST_TARGET_COLUMN_GROUPS = [
+    ("Technical indicators", TECHNICAL_VARIANTS),
+    ("Additional metrics", ADDITIONAL_VARIANTS),
+]
+
+MINERVINI_CRITERIA = {
+    "Earnings Growth": lambda df: [
+        col for col in df.columns if "EPS" in col and "growth" in col.lower()
+    ],
+    "Sales Growth": lambda df: [
+        col for col in df.columns if "Sales" in col and "growth" in col.lower()
+    ],
+    "ROE": lambda df: ["ROE"] if "ROE" in df.columns else [],
+    "Institutional Ownership": lambda df: [
+        col
+        for col in df.columns
+        if "institutional" in col.lower() or "inst" in col.lower()
+    ],
+    "Price Performance": lambda df: [
+        col
+        for col in df.columns
+        if "perf" in col.lower() or "performance" in col.lower()
+    ],
+}
+
 
 def get_finviz_tickers_with_filters(use_cache=True):
     """
     Get tickers from FinViz with filters matching:
     https://finviz.com/screener.ashx?v=211&f=cap_midover%2Cipodate_more10%2Csh_avgvol_o300%2Csh_price_o7&ft=4
-    
+
     Filters:
     - Market cap: Mid-cap and above (cap_midover)
     - IPO date: More than 10 years ago (ipodate_more10)
     - Average volume: Over 300K (sh_avgvol_o300)
     - Price: Over $7 (sh_price_o7)
-    
+
     Returns data with Mark Minervini-style growth metrics including:
     - Earnings growth metrics
     - Sales growth
     - Institutional Ownership
     - Target Price
     - And other relevant technical/fundamental indicators
-    
+
     Args:
         use_cache (bool): If True, uses cached data if available to avoid refetching
     """
-    cache_file = "finviz_screener_cache_enhanced.csv"
-    
-    # Check if cache exists and use_cache is True
-    if use_cache and os.path.exists(cache_file):
-        print(f"Loading from cache file: {cache_file}")
-        df = pd.read_csv(cache_file)
-        print(f"Cache contains {len(df)} tickers with columns: {', '.join(df.columns)}")
-        
-        # Go straight to column selection
-        filtered_df = select_desired_columns(df)
-        
-        # Save to CSV
-        output_filename = "finviz_minervini_tickers.csv"
-        filtered_df.to_csv(output_filename, index=False)
-        print(f"✅ Filtered tickers saved to: {output_filename}")
-        
-        return filtered_df
-    
-    # Define filters matching your URL parameters
-    filters_dict = {
-        'Market Cap.': '+Mid (over $2bln)',     # cap_midover
-        'IPO Date': 'More than 10 years ago',   # ipodate_more10
-        'Average Volume': 'Over 300K',          # sh_avgvol_o300 (changed from 500K to 300K)
-        'Price': 'Over $7'                      # sh_price_o7 (changed from $10 to $7)
-    }
-    
-    # Try multiple screener types to get all the columns we need
-    screeners_data = {}
-    
-    print("=" * 60)
-    print("FETCHING DATA FROM MULTIPLE FINVIZ SCREENERS")
-    print("=" * 60)
-    
-    # Technical screener - has Beta, RSI, Performance metrics
-    print("1. Fetching data from Technical screener...")
-    try:
-        tech_screener = Technical()
-        tech_screener.set_filter(filters_dict=filters_dict)
-        screeners_data['technical'] = tech_screener.screener_view()
-        print(f"   ✅ Technical screener: {len(screeners_data['technical'])} stocks")
-        print(f"   Columns: {', '.join(screeners_data['technical'].columns)}")
-    except Exception as e:
-        print(f"   ❌ Technical screener failed: {e}")
-    
-    # Overview screener - has basic fundamental data
-    print("\n2. Fetching data from Overview screener...")
-    try:
-        overview_screener = Overview()
-        overview_screener.set_filter(filters_dict=filters_dict)
-        screeners_data['overview'] = overview_screener.screener_view()
-        print(f"   ✅ Overview screener: {len(screeners_data['overview'])} stocks")
-        print(f"   Columns: {', '.join(screeners_data['overview'].columns)}")
-    except Exception as e:
-        print(f"   ❌ Overview screener failed: {e}")
-    
-    # Valuation screener - has P/E, PEG, valuation metrics
-    print("\n3. Fetching data from Valuation screener...")
-    try:
-        valuation_screener = Valuation()
-        valuation_screener.set_filter(filters_dict=filters_dict)
-        screeners_data['valuation'] = valuation_screener.screener_view()
-        print(f"   ✅ Valuation screener: {len(screeners_data['valuation'])} stocks")
-        print(f"   Columns: {', '.join(screeners_data['valuation'].columns)}")
-    except Exception as e:
-        print(f"   ❌ Valuation screener failed: {e}")
-    
-    # Financial screener - has earnings growth, sales growth, ROE, etc.
-    print("\n4. Fetching data from Financial screener...")
-    try:
-        financial_screener = Financial()
-        financial_screener.set_filter(filters_dict=filters_dict)
-        screeners_data['financial'] = financial_screener.screener_view()
-        print(f"   ✅ Financial screener: {len(screeners_data['financial'])} stocks")
-        print(f"   Columns: {', '.join(screeners_data['financial'].columns)}")
-    except Exception as e:
-        print(f"   ❌ Financial screener failed: {e}")
-    
-    # Ownership screener - has institutional ownership, insider ownership
-    print("\n5. Fetching data from Ownership screener...")
-    try:
-        ownership_screener = Ownership()
-        ownership_screener.set_filter(filters_dict=filters_dict)
-        screeners_data['ownership'] = ownership_screener.screener_view()
-        print(f"   ✅ Ownership screener: {len(screeners_data['ownership'])} stocks")
-        print(f"   Columns: {', '.join(screeners_data['ownership'].columns)}")
-    except Exception as e:
-        print(f"   ❌ Ownership screener failed: {e}")
-    
+    if use_cache and os.path.exists(CACHE_FILE):
+        df = load_cached_screener_data(CACHE_FILE)
+        return save_selected_columns(df, OUTPUT_FILE)
+
+    screeners_data = fetch_all_screeners(FINVIZ_FILTERS)
     if not screeners_data:
-        print("❌ ERROR: No screener data was successfully fetched!")
+        print("ERROR: No screener data was successfully fetched.")
         return pd.DataFrame()
-    
-    print("\n" + "=" * 60)
-    print("COMBINING DATA FROM ALL SCREENERS")
+
+    df = merge_screener_data(screeners_data)
+    if df.empty:
+        return pd.DataFrame()
+
+    print_combined_dataset_summary(df)
+    df.to_csv(CACHE_FILE, index=False)
+    print(f"\nRaw data saved to cache: {CACHE_FILE}")
+
+    return save_selected_columns(df, OUTPUT_FILE)
+
+
+def load_cached_screener_data(cache_file):
+    print(f"Loading from cache file: {cache_file}")
+    df = pd.read_csv(cache_file)
+    print(f"Cache contains {len(df)} tickers with columns: {', '.join(df.columns)}")
+    return df
+
+
+def save_selected_columns(df, output_file):
+    filtered_df = select_desired_columns(df)
+    filtered_df.to_csv(output_file, index=False)
+    print(f"Filtered tickers saved to: {output_file}")
+    return filtered_df
+
+
+def fetch_all_screeners(filters_dict):
     print("=" * 60)
-    
-    # Start with the first available dataframe as base
-    base_df = None
-    base_name = None
-    for name, df in screeners_data.items():
-        if df is not None and len(df) > 0:
-            base_df = df.copy()
-            base_name = name
-            print(f"Using {name} screener as base with {len(base_df)} stocks")
-            break
-    
+    print("Fetching data from Finviz screeners")
+    print("=" * 60)
+
+    screeners_data = {}
+    for index, (name, display_name, screener_cls) in enumerate(SCREENER_CONFIGS, 1):
+        df = fetch_screener_data(index, display_name, screener_cls, filters_dict)
+        if df is not None:
+            screeners_data[name] = df
+    return screeners_data
+
+
+def fetch_screener_data(index, display_name, screener_cls, filters_dict):
+    print(f"{index}. Fetching {display_name} screener data...")
+    try:
+        screener = screener_cls()
+        screener.set_filter(filters_dict=filters_dict)
+        df = screener.screener_view()
+        print(f"   {display_name} screener returned {len(df)} stocks")
+        print(f"   Columns: {', '.join(df.columns)}")
+        return df
+    except Exception as e:
+        print(f"   ERROR: {display_name} screener failed: {e}")
+        return None
+
+
+def merge_screener_data(screeners_data):
+    print("\n" + "=" * 60)
+    print("Combining screener data")
+    print("=" * 60)
+
+    base_name, base_df = find_base_screener(screeners_data)
     if base_df is None:
-        print("❌ ERROR: No valid base dataframe found!")
+        print("ERROR: No valid base dataframe found.")
         return pd.DataFrame()
-    
-    # Merge with other dataframes one by one
+
     for name, df in screeners_data.items():
         if name == base_name or df is None or len(df) == 0:
             continue
-        
-        print(f"\nMerging {name} screener data...")
-        
-        # Get the common tickers
-        base_tickers = set(base_df['Ticker'].tolist())
-        merge_tickers = set(df['Ticker'].tolist())
-        common_tickers = base_tickers.intersection(merge_tickers)
-        
-        print(f"   Base has {len(base_tickers)} tickers, {name} has {len(merge_tickers)} tickers")
-        print(f"   Common tickers: {len(common_tickers)}")
-        
-        # Merge on Ticker
-        try:
-            base_df = pd.merge(base_df, df, on='Ticker', how='outer', suffixes=('', f'_{name}'))
-            
-            # Remove duplicate columns (keep the original, drop the suffixed ones)
-            cols_to_drop = [col for col in base_df.columns if col.endswith(f'_{name}')]
-            if cols_to_drop:
-                base_df = base_df.drop(columns=cols_to_drop)
-                print(f"   Dropped duplicate columns: {', '.join(cols_to_drop)}")
-            
-            print(f"   ✅ Merged successfully. Combined dataframe now has {len(base_df)} rows and {len(base_df.columns)} columns")
-            
-        except Exception as e:
-            print(f"   ❌ Failed to merge {name} screener: {e}")
-    
-    # Now we have a combined dataframe with all available columns
-    df = base_df
-    print(f"\n🎉 FINAL COMBINED DATASET:")
+        base_df = merge_single_screener(base_df, name, df)
+
+    return base_df
+
+
+def find_base_screener(screeners_data):
+    for name, df in screeners_data.items():
+        if df is not None and len(df) > 0:
+            print(f"Using {name} screener as base with {len(df)} stocks")
+            return name, df.copy()
+    return None, None
+
+
+def merge_single_screener(base_df, name, df):
+    print(f"\nMerging {name} screener data...")
+
+    base_tickers = set(base_df["Ticker"].tolist())
+    merge_tickers = set(df["Ticker"].tolist())
+    common_tickers = base_tickers.intersection(merge_tickers)
+
+    print(f"   Base has {len(base_tickers)} tickers, {name} has {len(merge_tickers)} tickers")
+    print(f"   Common tickers: {len(common_tickers)}")
+
+    try:
+        merged_df = pd.merge(base_df, df, on="Ticker", how="outer", suffixes=("", f"_{name}"))
+        duplicate_columns = [col for col in merged_df.columns if col.endswith(f"_{name}")]
+        if duplicate_columns:
+            merged_df = merged_df.drop(columns=duplicate_columns)
+            print(f"   Dropped duplicate columns: {', '.join(duplicate_columns)}")
+
+        print(
+            "   Merge complete. Combined dataframe now has "
+            f"{len(merged_df)} rows and {len(merged_df.columns)} columns"
+        )
+        return merged_df
+    except Exception as e:
+        print(f"   ERROR: Failed to merge {name} screener: {e}")
+        return base_df
+
+
+def print_combined_dataset_summary(df):
+    print("\nCombined dataset:")
     print(f"   Total stocks: {len(df)}")
     print(f"   Total columns: {len(df.columns)}")
     print(f"   All columns: {', '.join(sorted(df.columns))}")
-    
-    # Save full data to cache file to avoid refetching
-    df.to_csv(cache_file, index=False)
-    print(f"\n✅ Raw data saved to cache: {cache_file}")
-    
-    # Select desired columns with Minervini-style metrics
-    filtered_df = select_desired_columns(df)
-    
-    # Save to CSV
-    output_filename = "finviz_minervini_tickers.csv"
-    filtered_df.to_csv(output_filename, index=False)
-    print(f"✅ Filtered tickers saved to: {output_filename}")
-    
-    return filtered_df
+
 
 def select_desired_columns(df):
     """
     Select and reorder the desired columns from the dataframe.
     Focus on Mark Minervini-style growth stock metrics.
-    
+
     Args:
         df: pandas DataFrame with all the columns
-        
+
     Returns:
         DataFrame with only the desired columns for growth stock analysis
     """
     print("\n" + "=" * 60)
-    print("SELECTING MINERVINI-STYLE GROWTH STOCK COLUMNS")
+    print("Selecting Minervini-style growth stock columns")
     print("=" * 60)
-    
-    # Define the columns we want to keep in priority order
+
     columns_to_keep = []
-    
-    # 1. BASIC IDENTIFICATION
-    essential_columns = ['Ticker', 'Company', 'Sector', 'Industry']
-    for col in essential_columns:
-        if col in df.columns:
-            columns_to_keep.append(col)
-            print(f"✅ {col}")
-        else:
-            print(f"❌ {col} - NOT FOUND")
-    
-    # 2. PRICE AND MARKET DATA
-    price_columns = ['Price', 'Change', 'Market Cap']
-    for col in price_columns:
-        if col in df.columns:
-            columns_to_keep.append(col)
-            print(f"✅ {col}")
-        else:
-            print(f"❌ {col} - NOT FOUND")
-    
-    # 3. VOLUME DATA (Critical for Minervini)
-    volume_variants = ['Avg Volume', 'AvgVolume', 'Avg. Volume', 'Average Volume', 'Avg Vol', 'Volume']
-    found_volume = False
-    for variant in volume_variants:
-        if variant in df.columns and not found_volume:
-            columns_to_keep.append(variant)
-            print(f"✅ Average Volume (as '{variant}')")
-            found_volume = True
-    
-    if not found_volume:
-        print("❌ Average Volume - NOT FOUND with any variant")
-    
-    # 4. EARNINGS GROWTH METRICS (Core Minervini criteria)
-    earnings_growth_variants = [
-        'EPS growth this year', 'EPS Growth', 'EPS growth past 5 years', 
-        'EPS Growth (ttm)', 'EPS Growth Y/Y', 'EPS growth next year',
-        'EPS (ttm)', 'EPS growth next 5 years', 'EPS Q/Q', 'EPS Y/Y'
-    ]
-    print(f"\n📈 EARNINGS GROWTH METRICS:")
-    for variant in earnings_growth_variants:
-        if variant in df.columns:
-            columns_to_keep.append(variant)
-            print(f"✅ {variant}")
-    
-    # 5. SALES GROWTH (Also important for Minervini)
-    sales_growth_variants = [
-        'Sales growth past 5 years', 'Sales Growth', 'Sales Q/Q', 'Sales Y/Y',
-        'Revenue Growth', 'Sales growth this year', 'Sales growth next year'
-    ]
-    print(f"\n📊 SALES GROWTH METRICS:")
-    for variant in sales_growth_variants:
-        if variant in df.columns:
-            columns_to_keep.append(variant)
-            print(f"✅ {variant}")
-    
-    # 6. PROFITABILITY METRICS
-    profitability_variants = [
-        'ROE', 'ROI', 'ROA', 'Gross Margin', 'Oper. Margin', 'Profit Margin',
-        'Operating Margin', 'Net Margin'
-    ]
-    print(f"\n💰 PROFITABILITY METRICS:")
-    for variant in profitability_variants:
-        if variant in df.columns:
-            columns_to_keep.append(variant)
-            print(f"✅ {variant}")
-    
-    # 7. VALUATION METRICS
-    valuation_variants = [
-        'P/E', 'Forward P/E', 'PEG', 'P/S', 'P/B', 'P/C', 'P/FCF',
-        'EPS (ttm)', 'EPS next Y', 'EPS next 5Y', 'Book/sh'
-    ]
-    print(f"\n💵 VALUATION METRICS:")
-    for variant in valuation_variants:
-        if variant in df.columns:
-            columns_to_keep.append(variant)
-            print(f"✅ {variant}")
-    
-    # 8. OWNERSHIP DATA (You specifically requested)
-    ownership_variants = [
-        'Institutional Ownership', 'Inst Own', 'Institutional Own', 'Inst. Own',
-        'Insider Own', 'Insider Owner', 'Insider Ownership', 'Insider Own.'
-    ]
-    print(f"\n🏢 OWNERSHIP METRICS:")
-    for variant in ownership_variants:
-        if variant in df.columns:
-            columns_to_keep.append(variant)
-            print(f"✅ {variant}")
-    
-    # 9. TARGET PRICE (You specifically requested)
-    target_price_variants = ['Target Price', 'Price Target', 'Analyst Target', 'Target']
-    print(f"\n🎯 TARGET PRICE:")
-    found_target = False
-    for variant in target_price_variants:
-        if variant in df.columns and not found_target:
-            columns_to_keep.append(variant)
-            print(f"✅ {variant}")
-            found_target = True
-    
-    if not found_target:
-        print("❌ Target Price - NOT FOUND with any variant")
-    
-    # 10. TECHNICAL INDICATORS (Important for Minervini's SEPA methodology)
-    technical_variants = [
-        'Beta', 'RSI (14)', 'RSI', 'Perf Week', 'Perf Month', 'Perf Quarter', 
-        'Perf Half Y', 'Perf Year', 'Perf YTD', 'Volatility', 'Volatility (Month)',
-        'SMA20', 'SMA50', 'SMA200', '50-Day Simple Moving Average', '200-Day Simple Moving Average',
-        'Recom', 'Rel Volume'
-    ]
-    print(f"\n📈 TECHNICAL INDICATORS:")
-    for variant in technical_variants:
-        if variant in df.columns:
-            columns_to_keep.append(variant)
-            print(f"✅ {variant}")
-    
-    # 11. ADDITIONAL FUNDAMENTAL METRICS
-    additional_variants = [
-        'Debt/Eq', 'Current Ratio', 'Quick Ratio', 'LT Debt/Eq', 'Dividend %',
-        'Payout', 'Income', 'Employees', 'Optionable', 'Shortable', 'Short Ratio',
-        'Short Interest'
-    ]
-    print(f"\n📋 ADDITIONAL METRICS:")
-    for variant in additional_variants:
-        if variant in df.columns:
-            columns_to_keep.append(variant)
-            print(f"✅ {variant}")
-    
-    # Create a new dataframe with only the columns we want
-    if columns_to_keep:
-        # Remove duplicates while preserving order
-        columns_to_keep = list(dict.fromkeys(columns_to_keep))
-        filtered_df = df[columns_to_keep]
-        
-        print(f"\n🎯 FINAL SELECTED COLUMNS ({len(columns_to_keep)} total):")
-        for i, col in enumerate(columns_to_keep, 1):
-            print(f"   {i:2d}. {col}")
-            
-    else:
-        filtered_df = df
-        print("⚠️ Could not find any of the desired columns. Keeping all columns.")
-    
-    # Print summary info
-    if 'Ticker' in filtered_df.columns:
-        tickers = filtered_df['Ticker'].tolist()
-        print(f"\n🎉 SUMMARY:")
-        print(f"   Total stocks found: {len(tickers)}")
-        print(f"   Total data columns: {len(filtered_df.columns)}")
-        
-        # Show a few example tickers
-        if len(tickers) > 0:
-            example_tickers = tickers[:10] if len(tickers) >= 10 else tickers
-            print(f"   Example tickers: {', '.join(example_tickers)}")
-            if len(tickers) > 10:
-                print(f"   ... and {len(tickers) - 10} more")
-    
+
+    add_required_columns(columns_to_keep, df, BASIC_COLUMNS)
+    add_required_columns(columns_to_keep, df, PRICE_COLUMNS)
+    add_first_matching_column(columns_to_keep, df, VOLUME_VARIANTS, "Average Volume")
+    add_column_groups(columns_to_keep, df)
+    add_target_price_column(columns_to_keep, df)
+    add_column_groups(columns_to_keep, df, POST_TARGET_COLUMN_GROUPS)
+
+    filtered_df = build_filtered_dataframe(df, columns_to_keep)
+    print_filtered_summary(filtered_df)
     return filtered_df
+
+
+def add_required_columns(columns_to_keep, df, candidates):
+    for column in candidates:
+        if column in df.columns:
+            columns_to_keep.append(column)
+            print(f"Found: {column}")
+        else:
+            print(f"Missing: {column}")
+
+
+def add_first_matching_column(columns_to_keep, df, candidates, label):
+    for column in candidates:
+        if column in df.columns:
+            columns_to_keep.append(column)
+            print(f"Found: {label} (as '{column}')")
+            return
+    print(f"Missing: {label}")
+
+
+def add_column_groups(columns_to_keep, df, column_groups=COLUMN_GROUPS):
+    for title, candidates in column_groups:
+        print(f"\n{title}:")
+        add_existing_columns(columns_to_keep, df, candidates)
+
+
+def add_existing_columns(columns_to_keep, df, candidates):
+    for column in candidates:
+        if column in df.columns:
+            columns_to_keep.append(column)
+            print(f"Found: {column}")
+
+
+def add_target_price_column(columns_to_keep, df):
+    print("\nTarget price:")
+    for column in TARGET_PRICE_VARIANTS:
+        if column in df.columns:
+            columns_to_keep.append(column)
+            print(f"Found: {column}")
+            return
+    print("Missing: Target Price")
+
+
+def build_filtered_dataframe(df, columns_to_keep):
+    if not columns_to_keep:
+        print("WARNING: Could not find any of the desired columns. Keeping all columns.")
+        return df
+
+    selected_columns = list(dict.fromkeys(columns_to_keep))
+    filtered_df = df[selected_columns]
+
+    print(f"\nSelected columns ({len(selected_columns)} total):")
+    for index, column in enumerate(selected_columns, 1):
+        print(f"   {index:2d}. {column}")
+
+    return filtered_df
+
+
+def print_filtered_summary(filtered_df):
+    if "Ticker" not in filtered_df.columns:
+        return
+
+    tickers = filtered_df["Ticker"].tolist()
+    print("\nSummary:")
+    print(f"   Total stocks found: {len(tickers)}")
+    print(f"   Total data columns: {len(filtered_df.columns)}")
+
+    if tickers:
+        example_tickers = tickers[:10] if len(tickers) >= 10 else tickers
+        print(f"   Example tickers: {', '.join(example_tickers)}")
+        if len(tickers) > 10:
+            print(f"   ... and {len(tickers) - 10} more")
+
 
 def analyze_minervini_criteria(df):
     """
@@ -366,81 +409,50 @@ def analyze_minervini_criteria(df):
     This function helps identify which stocks meet his growth criteria.
     """
     print("\n" + "=" * 60)
-    print("MARK MINERVINI CRITERIA ANALYSIS")
+    print("Mark Minervini criteria analysis")
     print("=" * 60)
-    
+
     if df.empty:
-        print("❌ No data to analyze")
+        print("No data to analyze")
         return
-    
-    total_stocks = len(df)
-    print(f"Total stocks in dataset: {total_stocks}")
-    
-    # Check for key Minervini criteria columns
-    criteria_checks = []
-    
-    # 1. Earnings Growth
-    earnings_cols = [col for col in df.columns if 'EPS' in col and 'growth' in col.lower()]
-    if earnings_cols:
-        print(f"✅ Earnings Growth data available: {', '.join(earnings_cols)}")
-        criteria_checks.append("Earnings Growth")
-    else:
-        print("❌ No earnings growth data found")
-    
-    # 2. Sales Growth
-    sales_cols = [col for col in df.columns if 'Sales' in col and 'growth' in col.lower()]
-    if sales_cols:
-        print(f"✅ Sales Growth data available: {', '.join(sales_cols)}")
-        criteria_checks.append("Sales Growth")
-    else:
-        print("❌ No sales growth data found")
-    
-    # 3. ROE (Return on Equity)
-    if 'ROE' in df.columns:
-        print("✅ ROE (Return on Equity) data available")
-        criteria_checks.append("ROE")
-    else:
-        print("❌ No ROE data found")
-    
-    # 4. Institutional Ownership
-    inst_own_cols = [col for col in df.columns if 'institutional' in col.lower() or 'inst' in col.lower()]
-    if inst_own_cols:
-        print(f"✅ Institutional Ownership data available: {', '.join(inst_own_cols)}")
-        criteria_checks.append("Institutional Ownership")
-    else:
-        print("❌ No institutional ownership data found")
-    
-    # 5. Price Performance
-    perf_cols = [col for col in df.columns if 'perf' in col.lower() or 'performance' in col.lower()]
-    if perf_cols:
-        print(f"✅ Price Performance data available: {', '.join(perf_cols)}")
-        criteria_checks.append("Price Performance")
-    else:
-        print("❌ No price performance data found")
-    
-    print(f"\n📊 MINERVINI CRITERIA COVERAGE: {len(criteria_checks)}/5")
-    print("   ✅ Available:", ", ".join(criteria_checks))
-    
-    missing_criteria = set(["Earnings Growth", "Sales Growth", "ROE", "Institutional Ownership", "Price Performance"]) - set(criteria_checks)
+
+    print(f"Total stocks in dataset: {len(df)}")
+
+    available_criteria = []
+    for criterion, selector in MINERVINI_CRITERIA.items():
+        matching_columns = selector(df)
+        if matching_columns:
+            print(f"Available: {criterion} data ({', '.join(matching_columns)})")
+            available_criteria.append(criterion)
+        else:
+            print(f"Missing: {criterion} data")
+
+    print_minervini_coverage(available_criteria)
+    return available_criteria
+
+
+def print_minervini_coverage(available_criteria):
+    expected_criteria = set(MINERVINI_CRITERIA.keys())
+    missing_criteria = expected_criteria - set(available_criteria)
+
+    print(f"\nMinervini criteria coverage: {len(available_criteria)}/5")
+    print("   Available:", ", ".join(available_criteria))
     if missing_criteria:
-        print("   ❌ Missing:", ", ".join(missing_criteria))
-    
-    return criteria_checks
+        print("   Missing:", ", ".join(missing_criteria))
+
 
 if __name__ == "__main__":
-    print("🚀 ENHANCED FINVIZ SCREENER FOR MARK MINERVINI GROWTH STOCKS")
+    print("Enhanced Finviz screener for Mark Minervini growth stocks")
     print("=" * 70)
-    
-    # Use True to load from cache if available, False to force refetch
+
     result_df = get_finviz_tickers_with_filters(use_cache=True)
-    
+
     if not result_df.empty:
-        # Analyze the results for Minervini criteria
         analyze_minervini_criteria(result_df)
-        
-        print(f"\n🎉 SUCCESS! Found {len(result_df)} stocks matching your criteria.")
-        print("📁 Files created:")
-        print("   • finviz_screener_cache_enhanced.csv (full raw data)")
-        print("   • finviz_minervini_tickers.csv (filtered for growth analysis)")
+
+        print(f"\nSUCCESS: Found {len(result_df)} stocks matching the configured criteria.")
+        print("Files created:")
+        print(f"   - {CACHE_FILE} (full raw data)")
+        print(f"   - {OUTPUT_FILE} (filtered for growth analysis)")
     else:
-        print("❌ No data was retrieved. Please check your internet connection and try again.")
+        print("No data was retrieved. Please check your internet connection and try again.")
