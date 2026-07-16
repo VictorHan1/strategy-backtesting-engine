@@ -68,3 +68,5 @@ The repository includes utility scripts for rebuilding or validating data source
 - Parameter optimization.
 - Portfolio-level risk modeling and correlation analysis.
 - Cleaner end-to-end data rebuild pipeline.
+
+<img width="1440" height="900" alt="image" src="https://github.com/user-attachments/assets/04d6e3ef-3278-4c25-b375-108f37619fc4" />
